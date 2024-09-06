@@ -1,10 +1,25 @@
 use crate::runtime::task::{TaskId, DEFAULT_INLINE_TASKS};
+use serde::Serialize;
 use smallvec::{smallvec, SmallVec};
 use std::cmp::{Ordering, PartialOrd};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VectorClock {
     pub(crate) time: SmallVec<[u32; DEFAULT_INLINE_TASKS]>,
+}
+
+impl Serialize for VectorClock {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(self.time.len()))?;
+        for e in &self.time {
+            seq.serialize_element(e)?;
+        }
+        seq.end()
+    }
 }
 
 impl VectorClock {

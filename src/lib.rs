@@ -1,4 +1,5 @@
-#![deny(warnings, missing_debug_implementations, missing_docs)]
+// #![deny(warnings, missing_debug_implementations, missing_docs)]
+// #![feature(backtrace_frames)]
 
 //! Shuttle is a library for testing concurrent Rust code, heavily inspired by [Loom][].
 //!
@@ -180,6 +181,7 @@
 //! [Loom]: https://github.com/tokio-rs/loom
 //! [pct]: https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/asplos277-pct.pdf
 
+pub mod annotations;
 pub mod future;
 pub mod hint;
 pub mod lazy_static;
@@ -390,6 +392,19 @@ where
     use crate::scheduler::ReplayScheduler;
 
     let scheduler = ReplayScheduler::new_from_encoded(encoded_schedule);
+    let runner = Runner::new(scheduler, Default::default());
+    runner.run(f);
+}
+
+/// TODO: rename, document
+pub fn visualize_replay<F>(f: F, encoded_schedule: &str)
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    use crate::scheduler::{AnnotationScheduler, ReplayScheduler};
+
+    let scheduler_inner = ReplayScheduler::new_from_encoded(encoded_schedule);
+    let scheduler = AnnotationScheduler::new(scheduler_inner);
     let runner = Runner::new(scheduler, Default::default());
     runner.run(f);
 }

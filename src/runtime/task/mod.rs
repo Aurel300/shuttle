@@ -541,7 +541,7 @@ pub(crate) struct ParkState {
 
 /// A `TaskId` is a unique identifier for a task. `TaskId`s are never reused within a single
 /// execution.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, serde::Serialize)]
 pub struct TaskId(pub(super) usize);
 
 impl Debug for TaskId {
