@@ -451,6 +451,8 @@ impl BatchSemaphore {
 
         let mut state = self.state.borrow_mut();
 
+        crate::annotations::record_semaphore_release(state.id.unwrap(), num_permits);
+
         if ExecutionState::should_stop() {
             // In case we are panicking, we release permits, but also clear
             // the waiters queue: we should not unblock the threads at this
@@ -485,6 +487,8 @@ impl BatchSemaphore {
                 while let Some(front) = state.waiters.front() {
                     if front.num_permits <= state.permits_available.available() {
                         let waiter = state.waiters.pop_front().unwrap();
+
+                        crate::annotations::record_semaphore_acquire_unblocked(state.id.unwrap(), waiter.task_id, waiter.num_permits);
 
                         // The clock we pass into the semaphore is the clock of the
                         // waiter, corresponding to the point at which the waiter was
@@ -638,7 +642,7 @@ impl Future for Acquire<'_> {
                 match acquire_result {
                     Ok(()) => {
                         if is_queued {
-                            crate::annotations::record_semaphore_acquire_unblocked(id, self.waiter.num_permits);
+                            crate::annotations::record_semaphore_acquire_unblocked(id, self.waiter.task_id, self.waiter.num_permits);
                             self.semaphore.remove_waiter(&self.waiter);
                         } else {
                             crate::annotations::record_semaphore_acquire_fast(id, self.waiter.num_permits);
@@ -686,5 +690,20 @@ impl Drop for Acquire<'_> {
             // If the waiter was granted permits, release them
             self.semaphore.release(self.waiter.num_permits);
         }
+    }
+}
+
+impl crate::annotations::WithName for &BatchSemaphore {
+    fn with_name_and_kind(self, name: Option<&str>, kind: Option<&str>) -> Self {
+        self.init_object_id();
+        crate::annotations::record_name_for_object(self.state.borrow().id.unwrap(), name, kind);
+        self
+    }
+}
+
+impl crate::annotations::WithName for BatchSemaphore {
+    fn with_name_and_kind(self, name: Option<&str>, kind: Option<&str>) -> Self {
+        (&self).with_name_and_kind(name, kind);
+        self
     }
 }

@@ -52,7 +52,8 @@ struct Frame(
 struct ObjectInfo {
     created_by: TaskId,
     created_at: usize,
-    name: String,
+    name: Option<String>,
+    kind: Option<String>,
     // count of interactions?
     // ...?
 }
@@ -62,7 +63,7 @@ struct TaskInfo {
     created_by: TaskId,
     first_step: usize,
     last_step: usize,
-    // name: String,
+    name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,7 +72,7 @@ enum AnnotationEvent {
     SemaphoreClosed(ObjectId),
     SemaphoreAcquireFast(ObjectId, usize),
     SemaphoreAcquireBlocked(ObjectId, usize),
-    SemaphoreAcquireUnblocked(ObjectId, usize),
+    SemaphoreAcquireUnblocked(ObjectId, TaskId, usize),
     SemaphoreTryAcquire(ObjectId, usize, bool),
     SemaphoreRelease(ObjectId, usize),
 
@@ -144,7 +145,8 @@ fn record_object() -> ObjectId {
         state.objects.push(ObjectInfo {
             created_by: state.last_task_id.unwrap(),
             created_at: state.events.len(),
-            name: "semaphore".to_string(),
+            name: None,
+            kind: None,
         });
         id
     }).unwrap_or(DUMMY_OBJECT_ID)
@@ -233,12 +235,16 @@ pub(crate) fn record_semaphore_acquire_blocked(object_id: ObjectId, num_permits:
     record_event(AnnotationEvent::SemaphoreAcquireBlocked(object_id, num_permits));
 }
 
-pub(crate) fn record_semaphore_acquire_unblocked(object_id: ObjectId, num_permits: usize) {
-    record_event(AnnotationEvent::SemaphoreAcquireUnblocked(object_id, num_permits));
+pub(crate) fn record_semaphore_acquire_unblocked(object_id: ObjectId, unblocked_task_id: TaskId, num_permits: usize) {
+    record_event(AnnotationEvent::SemaphoreAcquireUnblocked(object_id, unblocked_task_id, num_permits));
 }
 
 pub(crate) fn record_semaphore_try_acquire(object_id: ObjectId, num_permits: usize, successful: bool) {
     record_event(AnnotationEvent::SemaphoreTryAcquire(object_id, num_permits, successful));
+}
+
+pub(crate) fn record_semaphore_release(object_id: ObjectId, num_permits: usize) {
+    record_event(AnnotationEvent::SemaphoreRelease(object_id, num_permits));
 }
 
 pub(crate) fn record_task_created(task_id: TaskId, future: bool) {
@@ -248,6 +254,7 @@ pub(crate) fn record_task_created(task_id: TaskId, future: bool) {
             created_by: state.last_task_id.unwrap(),
             first_step: usize::MAX,
             last_step: 0,
+            name: None,
         });
     });
     record_event(AnnotationEvent::TaskCreated(task_id, future));
@@ -255,6 +262,28 @@ pub(crate) fn record_task_created(task_id: TaskId, future: bool) {
 
 pub(crate) fn record_task_terminated() {
     record_event(AnnotationEvent::TaskTerminated);
+}
+
+pub(crate) fn record_name_for_object(object_id: ObjectId, name: Option<&str>, kind: Option<&str>) {
+    with_state(move |state| {
+        if let Some(object_info) = state.objects.get_mut(object_id.0) {
+            if name.is_some() {
+                object_info.name = name.map(|name| name.to_string());
+            }
+            if kind.is_some() {
+                object_info.kind = kind.map(|kind| kind.to_string());
+            }
+        } // TODO: else panic? warn?
+    });
+}
+
+pub(crate) fn record_name_for_task(task_id: TaskId, name: &crate::current::TaskName) {
+    with_state(|state| {
+        if let Some(task_info) = state.tasks.get_mut(usize::from(task_id)) {
+            let name: &String = name.into();
+            task_info.name = Some(name.to_string());
+        } // TODO: else panic? warn?
+    });
 }
 
 pub(crate) fn record_random() {
@@ -283,4 +312,20 @@ pub(crate) fn record_schedule(choice: TaskId, runnable_tasks: &[&Task]) {
 
 pub(crate) fn record_tick() {
     record_event(AnnotationEvent::Tick);
+}
+
+pub trait WithName {
+    fn with_name_and_kind(self, name: Option<&str>, kind: Option<&str>) -> Self;
+
+    fn with_name(self, name: &str) -> Self
+    where Self: Sized
+    {
+        self.with_name_and_kind(Some(name), None)
+    }
+
+    fn with_kind(self, kind: &str) -> Self
+    where Self: Sized
+    {
+        self.with_name_and_kind(None, Some(kind))
+    }
 }
